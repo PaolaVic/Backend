@@ -20,8 +20,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.generation.blogpessoal.model.Postagem;
 import com.generation.blogpessoal.repository.PostagemRepository;
+import com.generation.blogpessoal.repository.TemaRepository;
 
 import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/postagens")
 @CrossOrigin(origins = "*", allowedHeaders = "*")
@@ -30,58 +32,57 @@ public class PostagemController {
     @Autowired
     private PostagemRepository postagemRepository;
 
-    // 1. Método para obter todas as postagens
+    @Autowired
+    private TemaRepository temaRepository;
+
     @GetMapping
     public ResponseEntity<List<Postagem>> getAll() {
         return ResponseEntity.ok(postagemRepository.findAll());
     }
 
-    // 2. Método para obter uma postagem por ID
     @GetMapping("/{id}")
     public ResponseEntity<Postagem> getById(@PathVariable Long id) {
-        Optional<Postagem> postagem = postagemRepository.findById(id);
-        return postagem.map(ResponseEntity::ok)
-                      .orElse(ResponseEntity.notFound().build());
+        return postagemRepository.findById(id)
+                .map(resposta -> ResponseEntity.ok(resposta))
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
-    // 3. Método para buscar postagens por título (ignorando maiúsculas/minúsculas)
-    @GetMapping("/titulo/{titulo}")
+    @GetMapping("titulo/{titulo}")
     public ResponseEntity<List<Postagem>> getByTitulo(@PathVariable String titulo) {
         return ResponseEntity.ok(postagemRepository.findAllByTituloContainingIgnoreCase(titulo));
     }
 
-    // 4. Método para criar uma nova postagem
     @PostMapping
     public ResponseEntity<Postagem> post(@Valid @RequestBody Postagem postagem) {
+        if (!temaRepository.existsById(postagem.getTema().getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tema não existe!");
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED).body(postagemRepository.save(postagem));
     }
 
-    // 5. Método para atualizar uma postagem existente
-    @PutMapping("/{id}")
-    public ResponseEntity<Postagem> put(@PathVariable Long id, @Valid @RequestBody Postagem postagemAtualizada) {
-        Optional<Postagem> postagemExistente = postagemRepository.findById(id);
-        if (!postagemExistente.isPresent()) {
-            return ResponseEntity.notFound().build(); // Retorna not found se a postagem não existir
+    @PutMapping
+    public ResponseEntity<Postagem> put(@Valid @RequestBody Postagem postagem) {
+        if (postagemRepository.existsById(postagem.getId())) {
+            if (temaRepository.existsById(postagem.getTema().getId())) {
+                return ResponseEntity.status(HttpStatus.OK)
+                        .body(postagemRepository.save(postagem));
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tema não existe!");
+            }
         }
-
-        // Atualiza os dados da postagem existente com os dados da postagem atualizada
-        Postagem postagem = postagemExistente.get();
-        postagem.setTitulo(postagemAtualizada.getTitulo());
-        postagem.setTexto(postagemAtualizada.getTexto());
-
-        // Salva a postagem atualizada
-        Postagem postagemSalva = postagemRepository.save(postagem);
-        return ResponseEntity.ok(postagemSalva);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
-    // 6. Método para deletar uma postagem pelo ID
-    @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         Optional<Postagem> postagem = postagemRepository.findById(id);
-        postagem.ifPresentOrElse(postagemRepository::delete, () -> {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Postagem não encontrada com o ID: " + id);
-        });
+
+        if (postagem.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+
+        postagemRepository.deleteById(id);
     }
 }
